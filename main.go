@@ -1,45 +1,54 @@
 package main
 
 import (
-	"fmt"
+	"context"
+	"log"
 	"os"
-	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/slack-go/slack"
+	"github.com/slack-go/slack/slackevents"
+	"github.com/slack-go/slack/socketmode"
 )
 
 func main() {
+
 	godotenv.Load(".env")
 
 	token := os.Getenv("SLACK_AUTH_TOKEN")
-	channelID := os.Getenv("SLACK_CHANNEL_ID")
+	appToken := os.Getenv("SLACK_APP_TOKEN")
+	client := slack.New(token, slack.OptionDebug(true), slack.OptionAppLevelToken(appToken))
 
-	//Slack Client
-	client := slack.New(token, slack.OptionDebug(true))
-
-	//Attachement to send to channel
-	attachment := slack.Attachment{
-		Pretext: "Message From Bot",
-		Text:    "Hello, I am a Slack Bot",
-		Color:   "#fff",
-		Fields: []slack.AttachmentField{
-			{
-				Title: "Date",
-				Value: time.Now().String(),
-			},
-		},
-	}
-
-	_, timestamp, err := client.PostMessage(
-		channelID,
-		slack.MsgOptionText("Check this message from bot", false),
-		slack.MsgOptionAttachments(attachment),
+	socketClient := socketmode.New(
+		client,
+		socketmode.OptionDebug(true),
+		socketmode.OptionLog(log.New(os.Stdout, "socketmode: ", log.Lshortfile|log.LstdFlags)),
 	)
 
-	if err != nil {
-		panic(err)
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	fmt.Println("Message was sent at" + timestamp)
+	go func(ctx context.Context, client *slack.Client, socketClient *socketmode.Client) {
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("Shutting down socketmode listener")
+				return
+			case event := <-socketClient.Events:
+				switch event.Type {
+				case socketmode.EventTypeEventsAPI:
+					eventsAPIEvent, ok := event.Data.(slackevents.EventsAPIEvent)
+					if !ok {
+						log.Printf("Could not type cast the event to the EventsAPIEvent: %v\n", event)
+						continue
+					}
+					socketClient.Ack(*event.Request)
+					log.Println(eventsAPIEvent)
+				}
+
+			}
+		}
+	}(ctx, client, socketClient)
+
+	socketClient.Run()
 }
