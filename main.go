@@ -33,7 +33,7 @@ func main() {
 
 	_, timestamp, err := client.PostMessage(
 		channelID,
-		slack.MsgOptionText("Bot Sent a message", false),
+		slack.MsgOptionText("Check this message from bot", false),
 		slack.MsgOptionAttachments(attachment),
 	)
 
@@ -41,5 +41,5 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Sprintf("Message was sent at" + timestamp)
+	fmt.Println("Message was sent at" + timestamp)
 }
